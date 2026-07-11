@@ -1,0 +1,204 @@
+{
+  "$comment": "docs/specs/hermes-tool-manifest.json — The enforceable form of 'Hermes is REST-only'. Hermes's tool-dispatch layer loads exactly this file; a tool call not listed here is rejected before any HTTP request is made. Every endpoint maps 1:1 to docs/specs/api-contract.yaml. Deliberately absent: anything that creates/modifies rules or schedules (no n8n endpoints, no webhook registration, no scene *creation* — Hermes executes scenes, humans define them), all auth/user management, device create/delete, and all MQTT (Hermes has no broker credentials by construction).",
+  "manifest_version": "1.0",
+  "actor": "hermes",
+  "base_url": "/api/v1",
+  "auth": {
+    "scheme": "bearer",
+    "description": "Long-lived service JWT with claim actor_type=hermes; backend writes audit_log.actor_type from this claim and audit_log.actor_context from the X-Hermes-Context header ({conversation_id, message_id}) Hermes sends on every state-changing call."
+  },
+  "tools": [
+    {
+      "name": "list_rooms",
+      "description": "List all rooms with device counts. Use to resolve room names the user mentions.",
+      "endpoint": { "method": "GET", "path": "/rooms" },
+      "parameters": { "type": "object", "properties": {}, "required": [] },
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "list_devices",
+      "description": "List devices, optionally filtered by room, type, or online status. Use to resolve which device the user means before reading or writing.",
+      "endpoint": { "method": "GET", "path": "/devices" },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "room_id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "online": { "type": "boolean" }
+        },
+        "required": []
+      },
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "get_device",
+      "description": "Get one device with all its capabilities and their current values.",
+      "endpoint": { "method": "GET", "path": "/devices/{device_id}" },
+      "parameters": {
+        "type": "object",
+        "properties": { "device_id": { "type": "string", "format": "uuid" } },
+        "required": ["device_id"]
+      },
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "read_capability",
+      "description": "Read the current value of one capability on one device (e.g. temperature in the bedroom).",
+      "endpoint": { "method": "GET", "path": "/devices/{device_id}/capabilities/{capability}" },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "format": "uuid" },
+          "capability": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+        },
+        "required": ["device_id", "capability"]
+      },
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "read_capability_history",
+      "description": "Read historical readings for a capability over a time range, optionally downsampled. Use for questions like 'how warm was it last night'.",
+      "endpoint": { "method": "GET", "path": "/devices/{device_id}/capabilities/{capability}/readings" },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "format": "uuid" },
+          "capability": { "type": "string" },
+          "from": { "type": "string", "format": "date-time" },
+          "to": { "type": "string", "format": "date-time" },
+          "interval": { "type": "string", "pattern": "^\\d+(s|m|h|d)$" },
+          "aggregate": { "type": "string", "enum": ["avg", "min", "max", "last"] }
+        },
+        "required": ["device_id", "capability", "from"]
+      },
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "write_capability",
+      "description": "Write a value to a writable capability (POST /devices/{id}/capabilities/{capability}). Covers simple actuators: power (bool), ir_command (enum). For ac_control use write_ac_control instead.",
+      "endpoint": { "method": "POST", "path": "/devices/{device_id}/capabilities/{capability}" },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "format": "uuid" },
+          "capability": { "type": "string", "enum": ["power", "ir_command"] },
+          "value": { "description": "bool for power; enum string from the capability's config.values for ir_command" }
+        },
+        "required": ["device_id", "capability", "value"]
+      },
+      "requires_confirmation": false,
+      "state_changing": true
+    },
+    {
+      "name": "write_ac_control",
+      "description": "Set air-conditioning state (mode, setpoint, fan) via the ac_control capability. Higher-impact than a light toggle (comfort + energy), so requires user confirmation.",
+      "endpoint": { "method": "POST", "path": "/devices/{device_id}/capabilities/ac_control" },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "format": "uuid" },
+          "value": {
+            "type": "object",
+            "properties": {
+              "mode": { "type": "string", "enum": ["off", "cool", "heat", "fan", "dry"] },
+              "setpoint_c": { "type": "number", "minimum": 16, "maximum": 30 },
+              "fan": { "type": "string", "enum": ["auto", "low", "med", "high"] }
+            },
+            "required": ["mode"]
+          }
+        },
+        "required": ["device_id", "value"]
+      },
+      "requires_confirmation": true,
+      "state_changing": true
+    },
+    {
+      "name": "list_scenes",
+      "description": "List available scenes and their actions so the user can be told what a scene will do before running it.",
+      "endpoint": { "method": "GET", "path": "/scenes" },
+      "parameters": { "type": "object", "properties": {}, "required": [] },
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "execute_scene",
+      "description": "Execute an existing scene by id. Hermes may run scenes but can never create, modify, or schedule them — scenes are defined by humans, schedules/triggers live in n8n.",
+      "endpoint": { "method": "POST", "path": "/scenes/{scene_id}/execute" },
+      "parameters": {
+        "type": "object",
+        "properties": { "scene_id": { "type": "string", "format": "uuid" } },
+        "required": ["scene_id"]
+      },
+      "requires_confirmation": false,
+      "state_changing": true
+    },
+    {
+      "name": "get_system_metrics",
+      "description": "Host CPU/RAM/disk/uptime numbers for questions like 'how's the server doing'.",
+      "endpoint": { "method": "GET", "path": "/system/metrics" },
+      "parameters": { "type": "object", "properties": {}, "required": [] },
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "get_weather",
+      "description": "Cached weather (current + short forecast) from the backend's weather passthrough. Never call an external weather provider directly.",
+      "endpoint": { "method": "GET", "path": "/weather" },
+      "parameters": {
+        "type": "object",
+        "properties": { "location": { "type": "string" } },
+        "required": []
+      },
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "query_audit_log",
+      "description": "Query recent audit entries, e.g. to answer 'who turned off the AC'. Read-only.",
+      "endpoint": { "method": "GET", "path": "/audit-log" },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "actor_type": { "type": "string", "enum": ["user", "hermes", "n8n"] },
+          "target_type": { "type": "string" },
+          "target_id": { "type": "string", "format": "uuid" },
+          "from": { "type": "string", "format": "date-time" },
+          "to": { "type": "string", "format": "date-time" },
+          "limit": { "type": "integer", "maximum": 100 }
+        },
+        "required": []
+      },
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "save_conversation_turn",
+      "description": "Internal: persist user/assistant/tool messages to hermes_conversations / hermes_messages via the backend. Not exposed to the LLM as a callable tool — listed here because the manifest is the complete allowlist of Hermes's outbound endpoints.",
+      "endpoint": { "method": "POST", "path": "/hermes/conversations/{conversation_id}/messages" },
+      "internal": true,
+      "requires_confirmation": false,
+      "state_changing": true
+    },
+    {
+      "name": "report_ai_usage",
+      "description": "Internal: write one ai_usage_log row per OpenRouter call (model, tokens, cost, latency, conversation/message link). Not exposed to the LLM.",
+      "endpoint": { "method": "POST", "path": "/ai/usage" },
+      "internal": true,
+      "requires_confirmation": false,
+      "state_changing": true
+    }
+  ],
+  "denied_by_design": [
+    "POST/PATCH/DELETE /devices — device lifecycle is manual, dashboard-only",
+    "POST/PATCH/DELETE /scenes — Hermes executes scenes, never defines them",
+    "Any n8n URL — Hermes cannot create, modify, trigger-register, or invoke workflows; 'when X then Y' is out of Hermes's power entirely",
+    "Any MQTT operation — Hermes holds no broker credentials",
+    "All /auth/* and user management endpoints"
+  ],
+  "$note": "The two internal:true entries require a small additive backend surface (POST message persistence + POST /ai/usage) not in Phase A's read-focused contract — flagged as an addendum to api-contract.yaml rather than silently assumed."
+}
