@@ -1,0 +1,944 @@
+# docs/specs/api-contract.yaml
+openapi: 3.0.3
+info:
+  title: ORBIT Backend API
+  version: 1.0.0
+  description: >
+    Contract for the ORBIT FastAPI backend. Dashboard and Hermes are both
+    clients of this API. The API exposes state and actions only — never rules;
+    all conditional/triggered logic lives in n8n. Every state-changing endpoint
+    writes an audit_log entry attributed to the calling actor (user | hermes | n8n).
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - { name: auth }
+  - { name: devices }
+  - { name: capabilities }
+  - { name: rooms }
+  - { name: scenes }
+  - { name: audit }
+  - { name: system }
+  - { name: weather }
+  - { name: ai }
+
+paths:
+
+  # ---------------------------------------------------------------- auth ----
+  /auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Exchange credentials for an access + refresh token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      security: []
+      summary: Rotate a refresh token for a new token pair
+      description: The presented refresh token is revoked and replaced (rotation).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: New token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the current session's refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '204': { description: Session revoked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current authenticated principal
+      responses:
+        '200':
+          description: Principal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ------------------------------------------------------------- devices ----
+  /devices:
+    get:
+      tags: [devices]
+      summary: List devices
+      parameters:
+        - { name: room_id, in: query, schema: { type: string, format: uuid } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: online, in: query, schema: { type: boolean } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: Device list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Device' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+    post:
+      tags: [devices]
+      summary: Register a device (manual registration only — no auto-discovery)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceCreate' }
+      responses:
+        '201':
+          description: Created. Response includes one-time MQTT credentials.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceCreated' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /devices/{deviceId}:
+    parameters:
+      - { $ref: '#/components/parameters/DeviceId' }
+    get:
+      tags: [devices]
+      summary: Get a device (includes capabilities and current state snapshot)
+      responses:
+        '200':
+          description: Device
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [devices]
+      summary: Update device metadata (name, room, type, firmware)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceUpdate' }
+      responses:
+        '200':
+          description: Updated device
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Device' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      tags: [devices]
+      summary: Deregister a device (revokes its MQTT credentials)
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # -------------------------------------------------------- capabilities ----
+  /devices/{deviceId}/capabilities:
+    parameters:
+      - { $ref: '#/components/parameters/DeviceId' }
+    get:
+      tags: [capabilities]
+      summary: List a device's capabilities with current state
+      responses:
+        '200':
+          description: Capabilities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CapabilityState' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [capabilities]
+      summary: Declare a new capability on a device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CapabilityCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Capability' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /devices/{deviceId}/capabilities/{capability}:
+    parameters:
+      - { $ref: '#/components/parameters/DeviceId' }
+      - { $ref: '#/components/parameters/CapabilityName' }
+    get:
+      tags: [capabilities]
+      summary: Current state of one capability
+      responses:
+        '200':
+          description: Current state (last retained value)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CapabilityState' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [capabilities]
+      summary: Write a value / send a command to a writable capability
+      description: >
+        Backend validates against the capability's data_type/config, publishes
+        to `orbit/devices/{deviceId}/{capability}/set`, and records an audit
+        entry attributed to the caller. Fire-and-forget at the MQTT level;
+        confirmation arrives via the state topic → WebSocket push.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommandRequest' }
+      responses:
+        '202':
+          description: Command accepted and published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandAccepted' }
+        '403':
+          description: Capability is not writable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Device is offline
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /devices/{deviceId}/capabilities/{capability}/readings:
+    parameters:
+      - { $ref: '#/components/parameters/DeviceId' }
+      - { $ref: '#/components/parameters/CapabilityName' }
+    get:
+      tags: [capabilities]
+      summary: Historical readings for one capability
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time }, description: Defaults to now }
+        - name: interval
+          in: query
+          description: Optional server-side downsampling bucket (e.g. 1m, 5m, 1h, 1d)
+          schema: { type: string, pattern: '^\d+(s|m|h|d)$' }
+        - name: aggregate
+          in: query
+          description: Aggregation when interval is set (numeric capabilities only)
+          schema: { type: string, enum: [avg, min, max, last], default: avg }
+        - { name: limit, in: query, schema: { type: integer, default: 1000, maximum: 10000 } }
+      responses:
+        '200':
+          description: Readings, ascending by time
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadingsResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # --------------------------------------------------------------- rooms ----
+  /rooms:
+    get:
+      tags: [rooms]
+      summary: List rooms (with device counts)
+      responses:
+        '200':
+          description: Rooms
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Room' }
+    post:
+      tags: [rooms]
+      summary: Create a room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoomCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Room' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /rooms/{roomId}:
+    parameters:
+      - name: roomId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [rooms]
+      summary: Get a room
+      responses:
+        '200':
+          description: Room
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Room' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [rooms]
+      summary: Update a room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoomUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Room' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [rooms]
+      summary: Delete a room (devices are unassigned, not deleted)
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # -------------------------------------------------------------- scenes ----
+  /scenes:
+    get:
+      tags: [scenes]
+      summary: List scenes
+      responses:
+        '200':
+          description: Scenes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Scene' }
+    post:
+      tags: [scenes]
+      summary: Create a scene (a static, ordered list of capability writes — no conditions)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SceneCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Scene' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /scenes/{sceneId}:
+    parameters:
+      - name: sceneId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [scenes]
+      summary: Get a scene with its actions
+      responses:
+        '200':
+          description: Scene
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Scene' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [scenes]
+      summary: Update a scene and/or replace its actions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SceneUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Scene' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      tags: [scenes]
+      summary: Delete a scene
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /scenes/{sceneId}/execute:
+    post:
+      tags: [scenes]
+      summary: Execute a scene's actions in order
+      description: >
+        Callable by dashboard users, Hermes, and n8n workflows. This endpoint
+        performs actions only — deciding *when* to call it is n8n's job.
+      parameters:
+        - name: sceneId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202':
+          description: Execution started; per-action results reported
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SceneExecutionResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # --------------------------------------------------------------- audit ----
+  /audit-log:
+    get:
+      tags: [audit]
+      summary: Query the audit log
+      parameters:
+        - { name: actor_type, in: query, schema: { type: string, enum: [user, hermes, n8n] } }
+        - { name: actor_user_id, in: query, schema: { type: string, format: uuid } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: target_type, in: query, schema: { type: string } }
+        - { name: target_id, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: Audit entries, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEntry' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  # -------------------------------------------------------------- system ----
+  /system/metrics:
+    get:
+      tags: [system]
+      summary: Host system metrics (real numbers, not an up/down ping)
+      responses:
+        '200':
+          description: Current host metrics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemMetrics' }
+
+  # ------------------------------------------------------------- weather ----
+  /weather:
+    get:
+      tags: [weather]
+      summary: Cached weather passthrough
+      description: >
+        Backend fetches from the configured external provider and caches
+        (TTL from config). The frontend and Hermes never call the provider
+        directly, keeping the API key server-side.
+      parameters:
+        - name: location
+          in: query
+          description: Named location key from config; defaults to the primary home location
+          schema: { type: string }
+      responses:
+        '200':
+          description: Weather snapshot + short forecast
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Weather' }
+        '502':
+          description: Upstream provider unavailable and cache expired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ------------------------------------------------------------------ ai ----
+  /ai/usage:
+    get:
+      tags: [ai]
+      summary: Query AI usage / cost records
+      parameters:
+        - { name: conversation_id, in: query, schema: { type: string, format: uuid } }
+        - { name: model, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - name: group_by
+          in: query
+          description: When set, returns aggregated totals instead of raw rows
+          schema: { type: string, enum: [model, day, conversation] }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: Usage rows (or aggregates when group_by is set)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/AiUsageEntry'
+                        - $ref: '#/components/schemas/AiUsageAggregate'
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Users authenticate via /auth/login. Hermes and n8n use long-lived
+        service principals (JWTs with actor_type claims 'hermes' / 'n8n')
+        issued from backend config — the audit log reads the actor from
+        this claim.
+
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CapabilityName:
+      name: capability
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[a-z][a-z0-9_]*$' }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, default: 50, minimum: 1, maximum: 500 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, default: 0, minimum: 0 }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials/token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Uniqueness or state conflict
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Request failed validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Too many attempts
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: device_offline }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+
+    PageMeta:
+      type: object
+      properties:
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, token_type, expires_in]
+      properties:
+        access_token: { type: string, description: Short-lived JWT }
+        refresh_token: { type: string, description: Opaque, rotated on use }
+        token_type: { type: string, enum: [bearer] }
+        expires_in: { type: integer, description: Access token TTL in seconds }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        role: { type: string, enum: [admin, member] }
+
+    Device:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        room_id: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        type: { type: string }
+        firmware_version: { type: string, nullable: true }
+        is_online: { type: boolean }
+        last_seen: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    DeviceDetail:
+      allOf:
+        - $ref: '#/components/schemas/Device'
+        - type: object
+          properties:
+            capabilities:
+              type: array
+              items: { $ref: '#/components/schemas/CapabilityState' }
+
+    DeviceCreate:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        room_id: { type: string, format: uuid, nullable: true }
+        firmware_version: { type: string }
+        capabilities:
+          type: array
+          items: { $ref: '#/components/schemas/CapabilityCreate' }
+
+    DeviceCreated:
+      allOf:
+        - $ref: '#/components/schemas/DeviceDetail'
+        - type: object
+          properties:
+            mqtt_credentials:
+              type: object
+              description: Shown once at registration; flash onto the device.
+              properties:
+                username: { type: string, example: dev-4f1c... }
+                password: { type: string }
+                state_topic_prefix: { type: string, example: orbit/devices/{id}/ }
+
+    DeviceUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string }
+        room_id: { type: string, format: uuid, nullable: true }
+        firmware_version: { type: string }
+
+    Capability:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        device_id: { type: string, format: uuid }
+        capability: { type: string, example: temperature }
+        data_type: { type: string, enum: [float, int, bool, string, enum, json] }
+        unit: { type: string, nullable: true, example: "°C" }
+        access: { type: string, enum: [read, write, read_write] }
+        label: { type: string, example: Temperature }
+        config: { type: object, additionalProperties: true }
+
+    CapabilityCreate:
+      type: object
+      required: [capability, data_type, access, label]
+      properties:
+        capability: { type: string }
+        data_type: { type: string, enum: [float, int, bool, string, enum, json] }
+        unit: { type: string }
+        access: { type: string, enum: [read, write, read_write] }
+        label: { type: string }
+        config: { type: object, additionalProperties: true }
+
+    CapabilityState:
+      allOf:
+        - $ref: '#/components/schemas/Capability'
+        - type: object
+          properties:
+            value:
+              description: Latest reported value (type per data_type); null if never reported
+              nullable: true
+            reported_at: { type: string, format: date-time, nullable: true }
+
+    CommandRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          description: Target value; validated against data_type and config
+      example: { value: true }
+
+    CommandAccepted:
+      type: object
+      properties:
+        request_id: { type: string, format: uuid }
+        published_topic: { type: string, example: orbit/devices/{id}/power/set }
+        audit_id: { type: string, format: uuid }
+
+    Reading:
+      type: object
+      properties:
+        value: { nullable: true }
+        recorded_at: { type: string, format: date-time }
+
+    ReadingsResponse:
+      type: object
+      properties:
+        device_id: { type: string, format: uuid }
+        capability: { type: string }
+        interval: { type: string, nullable: true }
+        aggregate: { type: string, nullable: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Reading' }
+
+    Room:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        icon: { type: string, nullable: true }
+        sort_order: { type: integer }
+        device_count: { type: integer, readOnly: true }
+
+    RoomCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        slug: { type: string, description: Generated from name if omitted }
+        icon: { type: string }
+        sort_order: { type: integer }
+
+    RoomUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        icon: { type: string }
+        sort_order: { type: integer }
+
+    SceneAction:
+      type: object
+      required: [device_id, capability, payload]
+      properties:
+        device_id: { type: string, format: uuid }
+        capability: { type: string }
+        payload:
+          type: object
+          example: { value: false }
+        sort_order: { type: integer }
+
+    Scene:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        icon: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        actions:
+          type: array
+          items: { $ref: '#/components/schemas/SceneAction' }
+
+    SceneCreate:
+      type: object
+      required: [name, actions]
+      properties:
+        name: { type: string }
+        icon: { type: string }
+        description: { type: string }
+        actions:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SceneAction' }
+
+    SceneUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        icon: { type: string }
+        description: { type: string }
+        actions:
+          description: Full replacement of the action list when provided
+          type: array
+          items: { $ref: '#/components/schemas/SceneAction' }
+
+    SceneExecutionResult:
+      type: object
+      properties:
+        scene_id: { type: string, format: uuid }
+        audit_id: { type: string, format: uuid }
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              device_id: { type: string, format: uuid }
+              capability: { type: string }
+              status: { type: string, enum: [published, skipped_offline, error] }
+
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actor_type: { type: string, enum: [user, hermes, n8n] }
+        actor_user_id: { type: string, format: uuid, nullable: true }
+        actor_context:
+          type: object
+          additionalProperties: true
+          description: e.g. hermes conversation/message id, n8n workflow/execution id
+        action: { type: string, example: capability.write }
+        target_type: { type: string, example: capability }
+        target_id: { type: string, format: uuid, nullable: true }
+        before_state: { type: object, nullable: true }
+        after_state: { type: object, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    SystemMetrics:
+      type: object
+      properties:
+        cpu:
+          type: object
+          properties:
+            usage_percent: { type: number }
+            load_avg_1m: { type: number }
+            load_avg_5m: { type: number }
+            load_avg_15m: { type: number }
+            temperature_c: { type: number, nullable: true }
+        memory:
+          type: object
+          properties:
+            total_bytes: { type: integer }
+            used_bytes: { type: integer }
+            usage_percent: { type: number }
+        disk:
+          type: array
+          items:
+            type: object
+            properties:
+              mount: { type: string }
+              total_bytes: { type: integer }
+              used_bytes: { type: integer }
+              usage_percent: { type: number }
+        uptime_seconds: { type: integer }
+        collected_at: { type: string, format: date-time }
+
+    Weather:
+      type: object
+      properties:
+        location: { type: string }
+        current:
+          type: object
+          properties:
+            temperature_c: { type: number }
+            humidity_percent: { type: number }
+            condition: { type: string, example: partly_cloudy }
+            wind_kph: { type: number }
+        forecast:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              min_c: { type: number }
+              max_c: { type: number }
+              condition: { type: string }
+        fetched_at: { type: string, format: date-time }
+        cache_expires_at: { type: string, format: date-time }
+
+    AiUsageEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid, nullable: true }
+        model: { type: string }
+        prompt_tokens: { type: integer }
+        completion_tokens: { type: integer }
+        total_tokens: { type: integer }
+        cost_usd: { type: number }
+        latency_ms: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    AiUsageAggregate:
+      type: object
+      properties:
+        group: { type: string, description: model slug, ISO date, or conversation id }
+        request_count: { type: integer }
+        total_tokens: { type: integer }
+        total_cost_usd: { type: number }
