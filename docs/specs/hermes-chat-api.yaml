@@ -1,0 +1,262 @@
+# docs/specs/hermes-chat-api.yaml
+openapi: 3.0.3
+info:
+  title: Hermes Chat API
+  version: 1.0.0
+  description: >
+    The small inbound API Hermes itself exposes on the Raspberry Pi 5, consumed
+    by exactly two clients: the ORBIT dashboard's AI chat panel and the Telegram
+    gateway. This does not violate "Hermes is REST-only" — that constraint
+    governs Hermes's OUTBOUND calls (backend REST endpoints only, per
+    hermes-tool-manifest.json); it says nothing about Hermes accepting inbound
+    HTTP from its own clients.
+
+    Hermes persists nothing locally: conversation memory is read/written through
+    the backend's hermes_conversations / hermes_messages tables (Phase A schema)
+    via backend REST endpoints — Hermes never opens a database connection.
+
+servers:
+  - url: http://hermes.internal:8100/v1
+    description: Tailscale-internal only; never exposed through Caddy publicly.
+
+security:
+  - clientToken: []
+
+paths:
+
+  /chat:
+    post:
+      summary: Send a message to Hermes and receive its reply
+      description: >
+        Omit conversation_id to start a new conversation (Hermes creates one via
+        the backend and returns its id). Include it to continue an existing one —
+        the same conversation_id works from both sources, which is how a single
+        conversation spans dashboard and Telegram turns (channel is recorded
+        per-message in hermes_messages.channel, per the Phase A schema).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, source, user_id]
+              properties:
+                message:
+                  type: string
+                  minLength: 1
+                source:
+                  type: string
+                  enum: [dashboard, telegram]
+                  description: Maps to hermes_messages.channel
+                user_id:
+                  type: string
+                  format: uuid
+                  description: >
+                    ORBIT user on whose behalf the message is sent. The Telegram
+                    gateway resolves telegram chat id → ORBIT user id from its
+                    own config mapping before calling Hermes.
+                conversation_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: Omit/null to start a new conversation
+      responses:
+        '200':
+          description: Hermes's reply for this turn
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversation_id, message_id, reply]
+                properties:
+                  conversation_id: { type: string, format: uuid }
+                  message_id:
+                    type: string
+                    format: uuid
+                    description: hermes_messages id of the assistant reply
+                  reply:
+                    type: string
+                    description: Assistant text to render / send to Telegram
+                  actions_taken:
+                    type: array
+                    description: >
+                      Backend REST tool calls Hermes made this turn (mirrors
+                      hermes_messages.tool_calls), so the dashboard can render
+                      "Hermes turned on Living Room AC" affordances.
+                    items:
+                      type: object
+                      properties:
+                        tool: { type: string, example: write_capability }
+                        summary: { type: string, example: "Set power=true on Hallway Light" }
+                        audit_id:
+                          type: string
+                          format: uuid
+                          nullable: true
+                          description: audit_log id when the call was state-changing
+                  pending_confirmation:
+                    type: object
+                    nullable: true
+                    description: >
+                      Present when Hermes wants to invoke a tool flagged
+                      requires_confirmation in hermes-tool-manifest.json. The
+                      client re-calls /chat/confirm to approve or deny. Hermes
+                      takes no action until then.
+                    properties:
+                      confirmation_id: { type: string, format: uuid }
+                      tool: { type: string }
+                      summary: { type: string, example: "Set ac_control to cool 22°C in Bedroom" }
+                      expires_at: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: conversation_id not found (or belongs to another user)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Validation failure
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Upstream unavailable (OpenRouter or backend unreachable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /chat/confirm:
+    post:
+      summary: Approve or deny a pending tool confirmation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmation_id, approved]
+              properties:
+                confirmation_id: { type: string, format: uuid }
+                approved: { type: boolean }
+      responses:
+        '200':
+          description: >
+            Same shape as /chat 200 — Hermes either executed the confirmed tool
+            and replies with the result, or acknowledges the denial.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation_id: { type: string, format: uuid }
+                  message_id: { type: string, format: uuid }
+                  reply: { type: string }
+                  actions_taken:
+                    type: array
+                    items: { type: object }
+        '404':
+          description: Unknown or expired confirmation_id
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /conversations:
+    get:
+      summary: List a user's conversations (proxied from backend hermes_conversations)
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        '200':
+          description: Conversations, most recent first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        title: { type: string, nullable: true }
+                        started_at: { type: string, format: date-time }
+                        last_message_at: { type: string, format: date-time }
+
+  /conversations/{conversationId}/messages:
+    get:
+      summary: Message history for one conversation (dashboard chat panel hydration)
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: before, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Messages ascending by created_at
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        role: { type: string, enum: [user, assistant, system, tool] }
+                        channel: { type: string, enum: [dashboard, telegram] }
+                        content: { type: string }
+                        created_at: { type: string, format: date-time }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /health:
+    get:
+      summary: Liveness + dependency status
+      security: []
+      responses:
+        '200':
+          description: Health snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, degraded] }
+                  backend_reachable: { type: boolean }
+                  openrouter_reachable: { type: boolean }
+
+components:
+  securitySchemes:
+    clientToken:
+      type: http
+      scheme: bearer
+      description: >
+        Static bearer tokens from Hermes config — one for the dashboard backend-
+        for-frontend, one for the Telegram gateway. Not end-user JWTs; end-user
+        identity travels in user_id and is enforced by the backend when Hermes
+        acts (Hermes's own service JWT carries actor_type=hermes, and
+        actor_context carries conversation/message ids into audit_log).
+
+  responses:
+    Unauthorized:
+      description: Missing/invalid client token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: conversation_not_found }
+            message: { type: string }
