@@ -1,0 +1,144 @@
+# ORBIT stack — Stage 0 skeleton.
+# Six services on one bridge network. Hermes is NOT here: it runs on a
+# Raspberry Pi 5 (Stage 6) and talks to the backend over REST via Tailscale.
+# Tailscale itself runs on the host, not as a container (see README).
+
+name: orbit
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # localhost-only, for dev tooling (psql, Alembic from the host)
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [orbit]
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      # dynamic-security.json lives on the data volume (plugin rewrites it);
+      # bootstrap it with infra/mosquitto/gen-dynsec.sh
+      - mosquitto-data:/mosquitto/data
+    ports:
+      # Published on the LAN: ESP32 devices connect to the broker directly.
+      - "1883:1883"
+    environment:
+      # Used only by the healthcheck below; the ACL grants this user $SYS read.
+      MQTT_BACKEND_USER: ${MQTT_BACKEND_USER}
+      MQTT_BACKEND_PASSWORD: ${MQTT_BACKEND_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/broker/version' -C 1 -W 3 -u \"$$MQTT_BACKEND_USER\" -P \"$$MQTT_BACKEND_PASSWORD\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [orbit]
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      ORBIT_ADMIN_EMAIL: ${ORBIT_ADMIN_EMAIL:-}
+      ORBIT_ADMIN_PASSWORD: ${ORBIT_ADMIN_PASSWORD:-}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_TOPIC_PREFIX: ${MQTT_TOPIC_PREFIX:-orbit}
+      MQTT_BACKEND_USER: ${MQTT_BACKEND_USER}
+      MQTT_BACKEND_PASSWORD: ${MQTT_BACKEND_PASSWORD}
+      MQTT_DYNSEC_ADMIN_USER: ${MQTT_DYNSEC_ADMIN_USER}
+      MQTT_DYNSEC_ADMIN_PASSWORD: ${MQTT_DYNSEC_ADMIN_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      WEATHER_LATITUDE: ${WEATHER_LATITUDE:-0}
+      WEATHER_LONGITUDE: ${WEATHER_LONGITUDE:-0}
+      WEATHER_LOCATION_NAME: ${WEATHER_LOCATION_NAME:-home}
+      TZ: ${TZ:-UTC}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    networks: [orbit]
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+    healthcheck:
+      # 127.0.0.1, not localhost: Alpine resolves localhost to ::1 while the
+      # standalone Next server listens on IPv4 only.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks: [orbit]
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      N8N_HOST: ${N8N_DOMAIN}
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://${N8N_DOMAIN}/
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      GENERIC_TIMEZONE: ${TZ:-UTC}
+      TZ: ${TZ:-UTC}
+      N8N_DIAGNOSTICS_ENABLED: "false"
+    volumes:
+      - n8n-data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:5678/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    networks: [orbit]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ORBIT_DOMAIN: ${ORBIT_DOMAIN:-orbit.localhost}
+      N8N_DOMAIN: ${N8N_DOMAIN:-n8n.orbit.localhost}
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [orbit]
+
+networks:
+  orbit:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  mosquitto-data:
+  n8n-data:
+  caddy-data:
+  caddy-config:

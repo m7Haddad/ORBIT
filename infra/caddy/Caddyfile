@@ -1,0 +1,18 @@
+# ORBIT reverse proxy.
+# Routing is hostname-based (path-mounting n8n is fragile); hostnames come from
+# .env so they can point at Tailscale MagicDNS names without touching this file.
+# Hermes's chat API is deliberately NOT routed here — it stays Tailscale-internal.
+
+{$ORBIT_DOMAIN:orbit.localhost} {
+	@backend path /api/* /ws/*
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
+
+{$N8N_DOMAIN:n8n.orbit.localhost} {
+	reverse_proxy n8n:5678
+}

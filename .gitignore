@@ -1,0 +1,19 @@
+# Secrets / local environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+
+# OS noise
+.DS_Store
+Thumbs.db

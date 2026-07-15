@@ -25,6 +25,7 @@ tags:
   - { name: system }
   - { name: weather }
   - { name: ai }
+  - { name: hermes }
 
 paths:
 
@@ -550,6 +551,147 @@ paths:
                         - $ref: '#/components/schemas/AiUsageEntry'
                         - $ref: '#/components/schemas/AiUsageAggregate'
                   meta: { $ref: '#/components/schemas/PageMeta' }
+    post:
+      tags: [ai]
+      summary: Record AI usage for one model call (Hermes internal)
+      description: >
+        Write side of the usage log — one row per OpenRouter call, written by
+        Hermes via hermes-tool-manifest.json tool `report_ai_usage`
+        (internal:true, never exposed to the LLM). Restricted to the hermes
+        service principal (actor_type=hermes). `total_tokens` is a generated
+        column (prompt + completion) and is not accepted in the body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiUsageCreate' }
+      responses:
+        '201':
+          description: Usage row recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiUsageEntry' }
+        '403':
+          description: Caller is not the hermes service principal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # -------------------------------------------------------------- hermes ----
+  /hermes/conversations:
+    get:
+      tags: [hermes]
+      summary: List a user's conversations (Hermes internal)
+      description: >
+        Backing store for Hermes's own GET /conversations (hermes-chat-api.yaml
+        proxies this). Restricted to the hermes service principal.
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: Conversations, most recent activity first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/HermesConversation' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '403':
+          description: Caller is not the hermes service principal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      tags: [hermes]
+      summary: Create a conversation (Hermes internal)
+      description: >
+        Called by Hermes when /chat arrives without a conversation_id
+        (hermes-chat-api.yaml: "Hermes creates one via the backend"). Restricted
+        to the hermes service principal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HermesConversationCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HermesConversation' }
+        '403':
+          description: Caller is not the hermes service principal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /hermes/conversations/{conversationId}/messages:
+    parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [hermes]
+      summary: Persist one chat turn's messages (Hermes internal)
+      description: >
+        Hermes's message-persistence write path — hermes-tool-manifest.json
+        tool `save_conversation_turn` (internal:true, never exposed to the
+        LLM). Hermes persists nothing locally; every turn's messages (user
+        message, tool messages, assistant reply, in order) are written here
+        as a batch. Restricted to the hermes service principal
+        (actor_type=hermes). Updates the conversation's last_message_at.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HermesMessagesWrite' }
+      responses:
+        '201':
+          description: Messages persisted; ids returned in request order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HermesMessagesCreated' }
+        '403':
+          description: Caller is not the hermes service principal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    get:
+      tags: [hermes]
+      summary: Message history for one conversation (Hermes internal)
+      description: >
+        Backing store for Hermes's GET /conversations/{id}/messages and for
+        rebuilding LLM context. Restricted to the hermes service principal.
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: before, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Messages ascending by created_at
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/HermesMessage' }
+        '403':
+          description: Caller is not the hermes service principal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
 components:
   securitySchemes:
@@ -692,7 +834,7 @@ components:
               properties:
                 username: { type: string, example: dev-4f1c... }
                 password: { type: string }
-                state_topic_prefix: { type: string, example: orbit/devices/{id}/ }
+                state_topic_prefix: { type: string, example: "orbit/devices/{id}/" }
 
     DeviceUpdate:
       type: object
@@ -747,7 +889,7 @@ components:
       type: object
       properties:
         request_id: { type: string, format: uuid }
-        published_topic: { type: string, example: orbit/devices/{id}/power/set }
+        published_topic: { type: string, example: "orbit/devices/{id}/power/set" }
         audit_id: { type: string, format: uuid }
 
     Reading:
@@ -927,6 +1069,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         conversation_id: { type: string, format: uuid, nullable: true }
+        message_id: { type: string, format: uuid, nullable: true }
         model: { type: string }
         prompt_tokens: { type: integer }
         completion_tokens: { type: integer }
@@ -938,7 +1081,86 @@ components:
     AiUsageAggregate:
       type: object
       properties:
-        group: { type: string, description: model slug, ISO date, or conversation id }
+        group: { type: string, description: "model slug, ISO date, or conversation id" }
         request_count: { type: integer }
         total_tokens: { type: integer }
         total_cost_usd: { type: number }
+
+    AiUsageCreate:
+      type: object
+      required: [model, prompt_tokens, completion_tokens, cost_usd]
+      properties:
+        conversation_id: { type: string, format: uuid, nullable: true }
+        message_id: { type: string, format: uuid, nullable: true }
+        model: { type: string, description: OpenRouter model slug }
+        prompt_tokens: { type: integer, minimum: 0 }
+        completion_tokens: { type: integer, minimum: 0 }
+        cost_usd: { type: number, minimum: 0 }
+        latency_ms: { type: integer, nullable: true }
+
+    HermesMessageCreate:
+      type: object
+      required: [role, channel, content]
+      properties:
+        role: { type: string, enum: [user, assistant, system, tool] }
+        channel: { type: string, enum: [dashboard, telegram] }
+        content: { type: string }
+        tool_calls:
+          type: array
+          nullable: true
+          description: >
+            Backend REST tool calls made during this turn (assistant/tool
+            messages only) — stored in hermes_messages.tool_calls.
+          items: { type: object, additionalProperties: true }
+
+    HermesMessagesWrite:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          description: One chat turn's messages, in conversation order
+          items: { $ref: '#/components/schemas/HermesMessageCreate' }
+
+    HermesMessagesCreated:
+      type: object
+      properties:
+        conversation_id: { type: string, format: uuid }
+        message_ids:
+          type: array
+          description: Created hermes_messages ids, same order as the request
+          items: { type: string, format: uuid }
+        last_message_at: { type: string, format: date-time }
+
+    HermesConversation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        title: { type: string, nullable: true }
+        started_at: { type: string, format: date-time }
+        last_message_at: { type: string, format: date-time }
+        metadata: { type: object, additionalProperties: true }
+
+    HermesConversationCreate:
+      type: object
+      required: [user_id]
+      properties:
+        user_id: { type: string, format: uuid }
+        title: { type: string }
+        metadata: { type: object, additionalProperties: true }
+
+    HermesMessage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid }
+        role: { type: string, enum: [user, assistant, system, tool] }
+        channel: { type: string, enum: [dashboard, telegram] }
+        content: { type: string }
+        tool_calls:
+          type: array
+          nullable: true
+          items: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }

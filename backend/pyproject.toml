@@ -1,0 +1,27 @@
+[project]
+name = "orbit-backend"
+version = "0.1.0"
+description = "ORBIT backend — FastAPI modular monolith (Stage 0: health endpoint only)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.3",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "alembic>=1.13",
+    "argon2-cffi>=23.1",
+    "aiomqtt>=2.0",
+    "pyjwt>=2.8",
+    "structlog>=24.1",
+    "psutil>=5.9",
+    "httpx>=0.27",
+    "email-validator>=2.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

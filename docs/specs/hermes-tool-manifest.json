@@ -177,6 +177,30 @@
       "state_changing": false
     },
     {
+      "name": "create_conversation",
+      "description": "Internal: create a hermes_conversations row for a user when /chat arrives without a conversation_id. Not exposed to the LLM.",
+      "endpoint": { "method": "POST", "path": "/hermes/conversations" },
+      "internal": true,
+      "requires_confirmation": false,
+      "state_changing": true
+    },
+    {
+      "name": "list_conversations",
+      "description": "Internal: list a user's conversations, backing Hermes's own GET /conversations. Not exposed to the LLM.",
+      "endpoint": { "method": "GET", "path": "/hermes/conversations" },
+      "internal": true,
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
+      "name": "get_conversation_messages",
+      "description": "Internal: fetch message history for one conversation — LLM context rebuilding and Hermes's GET /conversations/{id}/messages. Not exposed to the LLM.",
+      "endpoint": { "method": "GET", "path": "/hermes/conversations/{conversation_id}/messages" },
+      "internal": true,
+      "requires_confirmation": false,
+      "state_changing": false
+    },
+    {
       "name": "save_conversation_turn",
       "description": "Internal: persist user/assistant/tool messages to hermes_conversations / hermes_messages via the backend. Not exposed to the LLM as a callable tool — listed here because the manifest is the complete allowlist of Hermes's outbound endpoints.",
       "endpoint": { "method": "POST", "path": "/hermes/conversations/{conversation_id}/messages" },
@@ -200,5 +224,5 @@
     "Any MQTT operation — Hermes holds no broker credentials",
     "All /auth/* and user management endpoints"
   ],
-  "$note": "The two internal:true entries require a small additive backend surface (POST message persistence + POST /ai/usage) not in Phase A's read-focused contract — flagged as an addendum to api-contract.yaml rather than silently assumed."
+  "$note": "The internal:true entries (conversation create/list/read, message persistence, ai-usage reporting) are the additive backend surface backing hermes-chat-api.yaml; all are now specified in api-contract.yaml under the hermes/ai tags and restricted to the hermes service principal."
 }
