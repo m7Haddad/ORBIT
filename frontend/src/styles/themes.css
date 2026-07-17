@@ -1,0 +1,267 @@
+/*
+ * ORBIT theme tokens — docs/specs/theme-tokens.md implemented verbatim.
+ * One vocabulary, four value sets switched via data-theme on <html>.
+ * Components reference semantic tokens ONLY — never raw colors, never
+ * `if theme === …` branches. Glass = Dark + a materials layer.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Theme-invariant: motion & shape (defined once)                      */
+/* ------------------------------------------------------------------ */
+:root {
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Light — base theme: warm neutral surfaces, dark text               */
+/* ------------------------------------------------------------------ */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-0: oklch(0.972 0.004 85);
+  --surface-1: oklch(1 0 0);
+  --surface-2: oklch(0.955 0.004 85);
+  --surface-3: oklch(1 0 0);
+  --border-subtle: oklch(0.905 0.005 85);
+  --border-strong: oklch(0.76 0.008 85);
+
+  --text-primary: oklch(0.235 0.008 85);
+  --text-secondary: oklch(0.465 0.01 85);
+  --text-tertiary: oklch(0.635 0.01 85);
+  --text-inverse: oklch(0.985 0 0);
+
+  --accent-primary: oklch(0.545 0.185 268);
+  --accent-primary-hover: oklch(0.5 0.185 268);
+  --accent-primary-active: oklch(0.455 0.185 268);
+  --accent-muted: oklch(0.545 0.185 268 / 0.11);
+
+  --status-success: oklch(0.615 0.145 155);
+  --status-success-muted: oklch(0.615 0.145 155 / 0.13);
+  --status-warning: oklch(0.7 0.145 70);
+  --status-warning-muted: oklch(0.7 0.145 70 / 0.15);
+  --status-danger: oklch(0.575 0.2 25);
+  --status-danger-muted: oklch(0.575 0.2 25 / 0.12);
+  --status-info: oklch(0.6 0.11 240);
+  --status-info-muted: oklch(0.6 0.11 240 / 0.12);
+
+  --shadow-1: 0 1px 2px oklch(0.25 0.02 268 / 0.05), 0 1px 3px oklch(0.25 0.02 268 / 0.07);
+  --shadow-2: 0 2px 4px oklch(0.25 0.02 268 / 0.05), 0 6px 16px oklch(0.25 0.02 268 / 0.1);
+  --shadow-3: 0 8px 20px oklch(0.25 0.02 268 / 0.1), 0 20px 48px oklch(0.25 0.02 268 / 0.16);
+
+  --material-blur: 0px;
+  --material-opacity: 1;
+  --scrim: oklch(0.25 0.01 85 / 0.42);
+  --page-backdrop: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dark — inverted neutrals; elevation via lighter surfaces + shadow  */
+/* ------------------------------------------------------------------ */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-0: oklch(0.195 0.008 268);
+  --surface-1: oklch(0.235 0.009 268);
+  --surface-2: oklch(0.285 0.01 268);
+  --surface-3: oklch(0.265 0.01 268);
+  --border-subtle: oklch(1 0 0 / 0.07);
+  --border-strong: oklch(1 0 0 / 0.22);
+
+  --text-primary: oklch(0.93 0.004 268);
+  --text-secondary: oklch(0.72 0.008 268);
+  --text-tertiary: oklch(0.55 0.008 268);
+  --text-inverse: oklch(0.17 0.005 268);
+
+  --accent-primary: oklch(0.66 0.165 268);
+  --accent-primary-hover: oklch(0.71 0.16 268);
+  --accent-primary-active: oklch(0.61 0.17 268);
+  --accent-muted: oklch(0.66 0.165 268 / 0.17);
+
+  --status-success: oklch(0.72 0.15 155);
+  --status-success-muted: oklch(0.72 0.15 155 / 0.16);
+  --status-warning: oklch(0.78 0.15 75);
+  --status-warning-muted: oklch(0.78 0.15 75 / 0.16);
+  --status-danger: oklch(0.68 0.19 25);
+  --status-danger-muted: oklch(0.68 0.19 25 / 0.16);
+  --status-info: oklch(0.7 0.11 240);
+  --status-info-muted: oklch(0.7 0.11 240 / 0.16);
+
+  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.32), 0 1px 3px oklch(0 0 0 / 0.28);
+  --shadow-2: 0 2px 4px oklch(0 0 0 / 0.3), 0 8px 20px oklch(0 0 0 / 0.4);
+  --shadow-3: 0 8px 24px oklch(0 0 0 / 0.44), 0 24px 56px oklch(0 0 0 / 0.52);
+
+  --material-blur: 0px;
+  --material-opacity: 1;
+  --scrim: oklch(0.08 0.01 268 / 0.6);
+  --page-backdrop: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Midnight — Dark's structure; near-black blue-shifted, OLED-friendly */
+/* Only surfaces/borders/accent depart from Dark.                      */
+/* ------------------------------------------------------------------ */
+[data-theme="midnight"] {
+  color-scheme: dark;
+
+  --surface-0: oklch(0.13 0.018 265);
+  --surface-1: oklch(0.17 0.02 265);
+  --surface-2: oklch(0.215 0.022 265);
+  --surface-3: oklch(0.195 0.022 265);
+  --border-subtle: oklch(0.72 0.06 265 / 0.12);
+  --border-strong: oklch(0.72 0.06 265 / 0.3);
+
+  --text-primary: oklch(0.94 0.006 265);
+  --text-secondary: oklch(0.73 0.012 265);
+  --text-tertiary: oklch(0.55 0.014 265);
+  --text-inverse: oklch(0.14 0.01 265);
+
+  --accent-primary: oklch(0.71 0.17 268);
+  --accent-primary-hover: oklch(0.76 0.16 268);
+  --accent-primary-active: oklch(0.66 0.175 268);
+  --accent-muted: oklch(0.71 0.17 268 / 0.18);
+
+  --status-success: oklch(0.74 0.15 155);
+  --status-success-muted: oklch(0.74 0.15 155 / 0.17);
+  --status-warning: oklch(0.8 0.15 75);
+  --status-warning-muted: oklch(0.8 0.15 75 / 0.17);
+  --status-danger: oklch(0.7 0.19 25);
+  --status-danger-muted: oklch(0.7 0.19 25 / 0.17);
+  --status-info: oklch(0.72 0.11 240);
+  --status-info-muted: oklch(0.72 0.11 240 / 0.17);
+
+  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.5), 0 1px 3px oklch(0 0 0 / 0.4);
+  --shadow-2: 0 2px 4px oklch(0 0 0 / 0.45), 0 8px 20px oklch(0 0 0 / 0.55);
+  --shadow-3: 0 8px 24px oklch(0 0 0 / 0.55), 0 24px 56px oklch(0 0 0 / 0.65);
+
+  --material-blur: 0px;
+  --material-opacity: 1;
+  --scrim: oklch(0.05 0.012 265 / 0.68);
+  --page-backdrop: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Glass — Dark + a materials layer, NOT a fourth palette.             */
+/* Inherits Dark's text/accent/status; overrides materials + surfaces  */
+/* (re-expressed with alpha) + border as a light alpha stroke.         */
+/* ------------------------------------------------------------------ */
+[data-theme="glass"] {
+  color-scheme: dark;
+
+  --surface-0: oklch(0.185 0.012 268);
+  --surface-1: oklch(0.29 0.012 268 / 0.55);
+  --surface-2: oklch(0.38 0.014 268 / 0.5);
+  --surface-3: oklch(0.3 0.013 268 / 0.72);
+  --border-subtle: oklch(1 0 0 / 0.12);
+  --border-strong: oklch(1 0 0 / 0.3);
+
+  --text-primary: oklch(0.93 0.004 268);
+  --text-secondary: oklch(0.74 0.008 268);
+  --text-tertiary: oklch(0.57 0.008 268);
+  --text-inverse: oklch(0.17 0.005 268);
+
+  --accent-primary: oklch(0.66 0.165 268);
+  --accent-primary-hover: oklch(0.71 0.16 268);
+  --accent-primary-active: oklch(0.61 0.17 268);
+  --accent-muted: oklch(0.66 0.165 268 / 0.2);
+
+  --status-success: oklch(0.72 0.15 155);
+  --status-success-muted: oklch(0.72 0.15 155 / 0.18);
+  --status-warning: oklch(0.78 0.15 75);
+  --status-warning-muted: oklch(0.78 0.15 75 / 0.18);
+  --status-danger: oklch(0.68 0.19 25);
+  --status-danger-muted: oklch(0.68 0.19 25 / 0.18);
+  --status-info: oklch(0.7 0.11 240);
+  --status-info-muted: oklch(0.7 0.11 240 / 0.18);
+
+  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.28), 0 2px 8px oklch(0 0 0 / 0.24);
+  --shadow-2: 0 4px 10px oklch(0 0 0 / 0.28), 0 10px 28px oklch(0 0 0 / 0.36);
+  --shadow-3: 0 10px 28px oklch(0 0 0 / 0.4), 0 28px 64px oklch(0 0 0 / 0.5);
+
+  --material-blur: 20px;
+  --material-opacity: 0.65;
+  --scrim: oklch(0.06 0.012 268 / 0.55);
+  /* Something for the glass to refract: a quiet aurora on the page bg. */
+  --page-backdrop:
+    radial-gradient(52rem 36rem at 12% -8%, oklch(0.42 0.16 285 / 0.34), transparent 62%),
+    radial-gradient(44rem 30rem at 88% 4%, oklch(0.4 0.14 225 / 0.28), transparent 60%),
+    radial-gradient(40rem 32rem at 55% 108%, oklch(0.36 0.13 320 / 0.22), transparent 62%);
+}
+
+/* ------------------------------------------------------------------ */
+/* Material composition (theme-tokens.md §3). Components opt in with   */
+/* `.material`; in non-Glass themes blur is 0 and opacity 1, so this   */
+/* degrades to a plain opaque surface — no theme branching needed.     */
+/* ------------------------------------------------------------------ */
+.material {
+  background: color-mix(
+    in oklch,
+    var(--surface-1),
+    transparent calc((1 - var(--material-opacity)) * 100%)
+  );
+  backdrop-filter: blur(var(--material-blur));
+  -webkit-backdrop-filter: blur(var(--material-blur));
+}
+
+.material-overlay {
+  background: color-mix(
+    in oklch,
+    var(--surface-3),
+    transparent calc((1 - var(--material-opacity)) * 100%)
+  );
+  backdrop-filter: blur(var(--material-blur));
+  -webkit-backdrop-filter: blur(var(--material-blur));
+}
+
+/* Skeletons: --surface-2 shimmer on --surface-1 — same tokens in all
+   four themes (theme-tokens.md rule 5). */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--surface-1), transparent 45%),
+    transparent
+  );
+  animation: skeleton-shimmer 1.6s var(--ease-standard) infinite;
+}
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
+}
+
+/* Rollback affordance for failed optimistic writes. */
+@keyframes orbit-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+

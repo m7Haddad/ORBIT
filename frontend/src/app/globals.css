@@ -1,26 +1,82 @@
 @import "tailwindcss";
+@import "../styles/themes.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* Map semantic theme tokens into Tailwind v4 utilities: bg-surface-1,
+ * text-secondary, border-subtle, bg-accent, text-danger, shadow-tile, …
+ * Components use ONLY these — raw palette classes (bg-zinc-900 etc.) are a
+ * token-spec violation. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-subtle: var(--border-subtle);
+  --color-strong: var(--border-strong);
+
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-tertiary: var(--text-tertiary);
+  --color-inverse: var(--text-inverse);
+
+  --color-accent: var(--accent-primary);
+  --color-accent-hover: var(--accent-primary-hover);
+  --color-accent-active: var(--accent-primary-active);
+  --color-accent-muted: var(--accent-muted);
+
+  --color-success: var(--status-success);
+  --color-success-muted: var(--status-success-muted);
+  --color-warning: var(--status-warning);
+  --color-warning-muted: var(--status-warning-muted);
+  --color-danger: var(--status-danger);
+  --color-danger-muted: var(--status-danger-muted);
+  --color-info: var(--status-info);
+  --color-info-muted: var(--status-info-muted);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  --shadow-tile: var(--shadow-1);
+  --shadow-tile-hover: var(--shadow-2);
+  --shadow-overlay: var(--shadow-3);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --ease-standard: var(--ease-standard);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--surface-0);
+  background-image: var(--page-backdrop);
+  background-attachment: fixed;
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  transition: background-color var(--duration-base) var(--ease-standard);
+}
+
+/* Focus visibility: accent at full opacity, every theme (token rule 4). */
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-muted);
+}
+
+/* Thin, token-driven scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* Numeric readouts align nicely everywhere. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
