@@ -1,5 +1,6 @@
 # Secrets / local environment
 .env
+firmware/**/orbit_config.h
 
 # Python
 __pycache__/
@@ -13,6 +14,7 @@ node_modules/
 out/
 *.tsbuildinfo
 npm-debug.log*
+frontend/e2e/artifacts/
 
 # OS noise
 .DS_Store
