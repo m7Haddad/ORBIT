@@ -217,6 +217,20 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), **NOW)
 
 
+class DashboardWidget(Base):
+    __tablename__ = "dashboard_widgets"
+
+    id: Mapped[UUID] = mapped_column(**UUID_PK)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    widget_type: Mapped[str] = mapped_column(Text)
+    source: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    size: Mapped[str] = mapped_column(Text)
+    position: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    title_override: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), **NOW)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), **NOW)
+
+
 class HermesConversation(Base):
     __tablename__ = "hermes_conversations"
 

@@ -44,6 +44,22 @@ class SessionRepository:
         await self._session.flush()
         return auth_session
 
+    async def list_active(self, user_id: UUID) -> list[AuthSession]:
+        now = datetime.now(timezone.utc)
+        rows = await self._session.scalars(
+            select(AuthSession)
+            .where(
+                AuthSession.user_id == user_id,
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > now,
+            )
+            .order_by(AuthSession.created_at.desc())
+        )
+        return list(rows)
+
+    async def by_id(self, session_id: UUID) -> AuthSession | None:
+        return await self._session.get(AuthSession, session_id)
+
     async def active_by_token_hash(self, token_hash: str) -> AuthSession | None:
         now = datetime.now(timezone.utc)
         return await self._session.scalar(

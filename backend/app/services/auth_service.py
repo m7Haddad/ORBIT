@@ -121,7 +121,9 @@ class AuthService:
             self._settings,
             sub=str(user.id),
             actor_type=ActorType.USER.value,
-            extra={"role": user.role},
+            # sid lets /auth/sessions mark the caller's current session and
+            # ties user audit entries to the session that performed them.
+            extra={"role": user.role, "sid": str(auth_session.id)},
         )
         pair = {
             "access_token": access,

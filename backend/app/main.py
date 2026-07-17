@@ -17,6 +17,7 @@ from app.api.v1 import (
     audit,
     auth,
     capabilities,
+    dashboard,
     devices,
     hermes,
     rooms,
@@ -136,6 +137,7 @@ def create_app() -> FastAPI:
         weather.router,
         ai_usage.router,
         hermes.router,
+        dashboard.router,
     ):
         app.include_router(router, prefix="/api/v1")
     app.include_router(ws.router)

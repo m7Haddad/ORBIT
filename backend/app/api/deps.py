@@ -72,6 +72,9 @@ async def get_principal(
             email=user.email,
             display_name=user.display_name,
             role=user.role,
+            # Session id from the token's sid claim — audit context + the
+            # "current session" marker on /auth/sessions.
+            context={"session_id": payload["sid"]} if payload.get("sid") else {},
         )
 
     if actor in (ActorType.HERMES.value, ActorType.N8N.value):

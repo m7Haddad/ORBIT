@@ -28,6 +28,10 @@ def system_metrics() -> dict[str, Any]:
 
     disks = []
     for partition in psutil.disk_partitions(all=False):
+        # Inside a container, docker bind-mounts (/etc/resolv.conf, …) appear
+        # as partitions — only real filesystem roots are meaningful here.
+        if partition.mountpoint.startswith(("/etc", "/dev", "/proc", "/sys")):
+            continue
         try:
             usage = psutil.disk_usage(partition.mountpoint)
         except (PermissionError, OSError):

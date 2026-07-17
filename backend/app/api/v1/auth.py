@@ -1,9 +1,11 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
-from app.api.deps import PrincipalDep, SessionDep, get_settings_dep
+from app.api.deps import PrincipalDep, SessionDep, UserDep, get_settings_dep
+from app.repositories.users import SessionRepository
 from app.services.auth_service import AuthError, AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -90,6 +92,52 @@ async def logout(
             status.HTTP_401_UNAUTHORIZED,
             detail={"code": "unknown_session", "message": str(exc)},
         )
+    await session.commit()
+
+
+@router.get("/sessions")
+async def list_sessions(session: SessionDep, principal: UserDep) -> dict:
+    rows = await SessionRepository(session).list_active(principal.user_id)
+    current_sid = principal.context.get("session_id")
+    return {
+        "data": [
+            {
+                "id": str(s.id),
+                "user_agent": s.user_agent,
+                "ip_address": str(s.ip_address) if s.ip_address else None,
+                "created_at": s.created_at.isoformat(),
+                "expires_at": s.expires_at.isoformat(),
+                "current": str(s.id) == current_sid,
+            }
+            for s in rows
+        ]
+    }
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_session(
+    session_id: UUID,
+    request: Request,
+    session: SessionDep,
+    principal: UserDep,
+) -> None:
+    repo = SessionRepository(session)
+    target = await repo.by_id(session_id)
+    if target is None or target.user_id != principal.user_id or target.revoked_at:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "session_not_found", "message": "session not found"},
+        )
+    await repo.revoke(session_id)
+    audit = request.app.state.audit_service
+    await audit.record(
+        session,
+        principal=principal,
+        action="auth.logout",
+        target_type="user",
+        target_id=principal.user_id,
+        before={"session_id": str(session_id), "revoked_remotely": True},
+    )
     await session.commit()
 
 
