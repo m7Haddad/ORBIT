@@ -177,6 +177,26 @@ CREATE INDEX idx_audit_target ON audit_log (target_type, target_id, created_at D
 CREATE INDEX idx_audit_actor ON audit_log (actor_type, created_at DESC);
 
 -- ---------------------------------------------------------------------------
+-- Dashboard layout (added Stage 4 / migration 0002 — the "layout table" from
+-- widget-contract.md §2). One row per widget instance, per user. `source` is
+-- the WidgetSource discriminated union as JSONB. Pure UI state: not audited.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE dashboard_widgets (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    widget_type    TEXT NOT NULL,                 -- widgets.config.ts registry key
+    source         JSONB NOT NULL,                -- WidgetSource union
+    size           TEXT NOT NULL,                 -- '1x1' | '2x1' | '2x2' | '4x2'
+    position       INT NOT NULL DEFAULT 0,
+    title_override TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_dashboard_widgets_user ON dashboard_widgets (user_id, position);
+
+-- ---------------------------------------------------------------------------
 -- Hermes conversation memory (one conversation can span dashboard + Telegram,
 -- so channel lives on the message, not the conversation).
 -- ---------------------------------------------------------------------------

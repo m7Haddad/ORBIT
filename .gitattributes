@@ -1,0 +1,7 @@
+# LF everywhere — the stack lives in WSL; Windows editors must not introduce
+# CRLF churn (an entire past diff was line-ending noise).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

@@ -26,6 +26,7 @@ tags:
   - { name: weather }
   - { name: ai }
   - { name: hermes }
+  - { name: dashboard }
 
 paths:
 
@@ -93,6 +94,36 @@ paths:
       responses:
         '204': { description: Session revoked }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/sessions:
+    get:
+      tags: [auth]
+      summary: List the caller's active sessions (user-only)
+      responses:
+        '200':
+          description: Active sessions, newest first; `current` marks the caller's own
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuthSessionInfo' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/sessions/{sessionId}:
+    delete:
+      tags: [auth]
+      summary: Revoke one of the caller's sessions (remote logout)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Session revoked (audited as auth.logout) }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /auth/me:
     get:
@@ -576,6 +607,52 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ----------------------------------------------------------- dashboard ----
+  /dashboard/layout:
+    get:
+      tags: [dashboard]
+      summary: The caller's dashboard widget layout (user-only)
+      responses:
+        '200':
+          description: Widget instances ordered by position
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/DashboardWidgetInstance' }
+    put:
+      tags: [dashboard]
+      summary: Replace the caller's dashboard layout atomically
+      description: >
+        Full replacement (the grid saves on edit-mode exit). Pure UI state —
+        deliberately NOT audited; only home-state changes are actor actions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [widgets]
+              properties:
+                widgets:
+                  type: array
+                  items: { $ref: '#/components/schemas/DashboardWidgetWrite' }
+      responses:
+        '200':
+          description: Saved layout with assigned ids
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/DashboardWidgetInstance' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
   # -------------------------------------------------------------- hermes ----
@@ -1132,6 +1209,36 @@ components:
           description: Created hermes_messages ids, same order as the request
           items: { type: string, format: uuid }
         last_message_at: { type: string, format: date-time }
+
+    AuthSessionInfo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_agent: { type: string, nullable: true }
+        ip_address: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        current: { type: boolean, description: True for the session making this request }
+
+    DashboardWidgetWrite:
+      type: object
+      required: [widget_type, source, size, position]
+      properties:
+        widget_type: { type: string, description: widgets.config.ts registry key }
+        source:
+          type: object
+          description: WidgetSource discriminated union (kind + fields)
+          additionalProperties: true
+        size: { type: string, enum: ["1x1", "2x1", "2x2", "4x2"] }
+        position: { type: integer, minimum: 0 }
+        title_override: { type: string, nullable: true }
+
+    DashboardWidgetInstance:
+      allOf:
+        - $ref: '#/components/schemas/DashboardWidgetWrite'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
 
     HermesConversation:
       type: object
